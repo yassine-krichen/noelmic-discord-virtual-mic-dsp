@@ -5,6 +5,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
     <!-- WasapiCapture/WasapiOut are obsolete in NAudio 3.x in favor of the new
          WasapiRecorderBuilder/WasapiPlayerBuilder APIs. That's a genuine API
          rewrite (different construction and capture model), out of scope for
@@ -24,6 +25,12 @@
   <ItemGroup>
     <PackageReference Include="NAudio" Version="3.0.1" />
     <PackageReference Include="NAudio.Wasapi" Version="3.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets NoelMic.Tests exercise internal test seams (e.g. MouseHook.IsToggleButton)
+         without widening those members to public. -->
+    <InternalsVisibleTo Include="NoelMic.Tests" />
   </ItemGroup>
 
 </Project>

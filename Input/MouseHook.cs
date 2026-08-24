@@ -3,16 +3,25 @@ using System.Runtime.InteropServices;
 namespace NoelMic.Input;
 
 /// <summary>
+/// Extra mouse buttons that can be bound to the mute toggle, matching the
+/// Win32 HIWORD(mouseData) convention (XBUTTON1 = 1, XBUTTON2 = 2).
+/// </summary>
+public enum ToggleMouseButton
+{
+    XButton1 = 1,
+    XButton2 = 2,
+}
+
+/// <summary>
 /// Global low-level mouse hook that raises <see cref="ToggleRequested"/> when
-/// the configured toggle button (XButton1) is pressed, regardless of which
-/// window has focus.
+/// the configured toggle button is pressed, regardless of which window has
+/// focus. The owning thread's message pump (e.g. <c>Application.Run()</c>)
+/// drives hook delivery — this class only installs/uninstalls the hook.
 /// </summary>
 public sealed class MouseHook
 {
     private const int WH_MOUSE_LL = 14;
     private const int WM_XBUTTONDOWN = 0x020B;
-    private const int WM_QUIT = 0x0012;
-    private const int ToggleButton = 1; // XBUTTON1, per Win32 HIWORD(mouseData) convention
     private const long DebounceMilliseconds = 150;
 
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
@@ -34,17 +43,6 @@ public sealed class MouseHook
         public IntPtr dwExtraInfo;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MSG
-    {
-        public IntPtr hwnd;
-        public uint message;
-        public IntPtr wParam;
-        public IntPtr lParam;
-        public uint time;
-        public POINT pt;
-    }
-
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
 
@@ -55,67 +53,48 @@ public sealed class MouseHook
     [DllImport("user32.dll")]
     private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("user32.dll")]
-    private static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
-
-    [DllImport("user32.dll")]
-    private static extern bool TranslateMessage(ref MSG lpMsg);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr DispatchMessage(ref MSG lpMsg);
-
-    [DllImport("user32.dll")]
-    private static extern bool PostThreadMessage(uint idThread, uint Msg, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetCurrentThreadId();
-
     // Kept alive as a field: SetWindowsHookEx only holds a native function
     // pointer, so a delegate that's only a local/lambda is GC-eligible and its
     // collection causes an intermittent crash inside the hook callback.
     private readonly LowLevelMouseProc _proc;
 
     private IntPtr _hookHandle = IntPtr.Zero;
-    private uint _hookThreadId;
     private long _lastToggleTicks;
+
+    // Plain field, not volatile: SetToggleButton and the hook callback both
+    // only ever run on the STA thread that owns the message pump.
+    private ToggleMouseButton _toggleButton;
 
     public event EventHandler? ToggleRequested;
 
-    public MouseHook()
+    public MouseHook(ToggleMouseButton toggleButton)
     {
+        _toggleButton = toggleButton;
         _proc = HookCallback;
     }
 
-    public void Run()
+    public void SetToggleButton(ToggleMouseButton button)
     {
-        _hookThreadId = GetCurrentThreadId();
+        _toggleButton = button;
+    }
 
+    public void Install()
+    {
         // hMod must be IntPtr.Zero for an in-process WH_MOUSE_LL hook —
         // passing a module handle here is only correct for out-of-process hooks.
         _hookHandle = SetWindowsHookEx(WH_MOUSE_LL, _proc, IntPtr.Zero, 0);
-
-        try
-        {
-            while (GetMessage(out var msg, IntPtr.Zero, 0, 0) != 0)
-            {
-                TranslateMessage(ref msg);
-                DispatchMessage(ref msg);
-            }
-        }
-        finally
-        {
-            if (_hookHandle != IntPtr.Zero)
-            {
-                UnhookWindowsHookEx(_hookHandle);
-                _hookHandle = IntPtr.Zero;
-            }
-        }
     }
 
-    public void Stop()
+    public void Uninstall()
     {
-        PostThreadMessage(_hookThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+        if (_hookHandle != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(_hookHandle);
+            _hookHandle = IntPtr.Zero;
+        }
     }
+
+    internal bool IsToggleButton(uint mouseData) => (ushort)(mouseData >> 16) == (int)_toggleButton;
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
@@ -127,9 +106,8 @@ public sealed class MouseHook
             if (nCode >= 0 && wParam == (IntPtr)WM_XBUTTONDOWN)
             {
                 var hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
-                var xButton = (ushort)(hookStruct.mouseData >> 16);
 
-                if (xButton == ToggleButton)
+                if (IsToggleButton(hookStruct.mouseData))
                 {
                     var now = Environment.TickCount64;
                     if (now - _lastToggleTicks >= DebounceMilliseconds)

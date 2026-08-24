@@ -19,6 +19,7 @@ public sealed class AudioEngine
 
     private WasapiCapture? _capture;
     private WasapiOut? _output;
+    private bool _stopped;
 
     public AudioEngine(MMDevice captureDevice, MMDevice renderDevice, MuteController muteController, AppConfig config)
     {
@@ -50,6 +51,14 @@ public sealed class AudioEngine
 
     public void Stop()
     {
+        // Callers may end up invoking Stop() twice on the same instance (e.g.
+        // a failed device switch followed by app shutdown); re-disposing
+        // already-disposed WASAPI/MMDevice objects is likely to throw.
+        if (_stopped)
+        {
+            return;
+        }
+
         try
         {
             _output?.Stop();
@@ -63,6 +72,7 @@ public sealed class AudioEngine
             _capture?.Dispose();
             _captureDevice.Dispose();
             _renderDevice.Dispose();
+            _stopped = true;
         }
     }
 
