@@ -30,6 +30,7 @@ public class AppConfigTests : IDisposable
             ToggleButton = "XButton2",
             StartWithWindows = false,
             PlaySoundOnToggle = false,
+            DspEnabled = false,
             Eq = { HighpassHz = 120f, PresenceBoostDb = 5f },
             Compressor = { Ratio = 6.0, ThresholdDb = -22 },
             Gate = { ThresholdDb = -50 },
@@ -42,6 +43,7 @@ public class AppConfigTests : IDisposable
         Assert.Equal(original.ToggleButton, loaded.ToggleButton);
         Assert.Equal(original.StartWithWindows, loaded.StartWithWindows);
         Assert.Equal(original.PlaySoundOnToggle, loaded.PlaySoundOnToggle);
+        Assert.Equal(original.DspEnabled, loaded.DspEnabled);
         Assert.Equal(original.Eq.HighpassHz, loaded.Eq.HighpassHz);
         Assert.Equal(original.Eq.PresenceBoostDb, loaded.Eq.PresenceBoostDb);
         Assert.Equal(original.Compressor.Ratio, loaded.Compressor.Ratio);

@@ -143,9 +143,10 @@ public sealed class AudioEngine
 
     private ISampleProvider ApplyDsp(ISampleProvider input)
     {
-        // The mute gate must stay outermost/last: it writes zeros when
-        // toggled off, and nothing downstream should touch the signal after that.
-        var dspChain = new DspChain(input, _config);
-        return new MuteGateSampleProvider(dspChain, _muteController);
+        // The mute gate must stay outermost/last regardless of DspEnabled: it's
+        // how the toggle hotkey mutes the mic, not a DSP quality knob, so
+        // bypassing the DSP chain for A/B testing must never bypass muting too.
+        ISampleProvider processed = _config.DspEnabled ? new DspChain(input, _config) : input;
+        return new MuteGateSampleProvider(processed, _muteController);
     }
 }

@@ -16,6 +16,10 @@ public sealed class AppConfig
 
     public bool PlaySoundOnToggle { get; set; } = true;
 
+    // Diagnostic/tuning toggle for A/B'ing raw passthrough against the DSP
+    // chain without a rebuild — edit config.json and restart to flip it.
+    public bool DspEnabled { get; set; } = true;
+
     public EqConfig Eq { get; set; } = new();
 
     public CompressorConfig Compressor { get; set; } = new();
