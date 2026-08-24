@@ -1,5 +1,6 @@
 using NAudio.CoreAudioApi;
 using NoelMic.Core;
+using NoelMic.Input;
 
 namespace NoelMic;
 
@@ -28,12 +29,32 @@ internal static class Program
             return;
         }
 
-        var engine = new AudioEngine(captureDevice, renderDevice);
+        var muteController = new MuteController();
+        muteController.MuteStateChanged += (_, isMuted) => Console.WriteLine(isMuted ? "Muted" : "Unmuted");
+
+        var mouseHook = new MouseHook();
+        mouseHook.ToggleRequested += (_, _) => muteController.Toggle();
+
+        var engine = new AudioEngine(captureDevice, renderDevice, muteController);
         engine.Start();
 
         Console.WriteLine($"Passthrough running: \"{captureDevice.FriendlyName}\" -> \"{renderDevice.FriendlyName}\"");
-        Console.WriteLine("Press Enter to stop.");
-        Console.ReadLine();
+        Console.WriteLine("Press XButton1 (side mouse button) to toggle mute. Press Enter to exit.");
+
+        // WH_MOUSE_LL requires a real Win32 message pump on the thread that
+        // installed the hook, so Console.ReadLine() moves to a background
+        // thread and the main STA thread runs MouseHook.Run() instead.
+        var exitListener = new Thread(() =>
+        {
+            Console.ReadLine();
+            mouseHook.Stop();
+        })
+        {
+            IsBackground = true,
+        };
+        exitListener.Start();
+
+        mouseHook.Run();
 
         engine.Stop();
     }

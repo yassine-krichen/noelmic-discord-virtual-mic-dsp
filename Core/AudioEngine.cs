@@ -12,14 +12,16 @@ public sealed class AudioEngine
 {
     private readonly MMDevice _captureDevice;
     private readonly MMDevice _renderDevice;
+    private readonly MuteController _muteController;
 
     private WasapiCapture? _capture;
     private WasapiOut? _output;
 
-    public AudioEngine(MMDevice captureDevice, MMDevice renderDevice)
+    public AudioEngine(MMDevice captureDevice, MMDevice renderDevice, MuteController muteController)
     {
         _captureDevice = captureDevice;
         _renderDevice = renderDevice;
+        _muteController = muteController;
     }
 
     public void Start()
@@ -63,7 +65,7 @@ public sealed class AudioEngine
     // Capture and render endpoints rarely agree on sample rate or channel count
     // (e.g. a mono 48kHz mic vs. VB-CABLE's stereo 44.1kHz mix format), so both
     // conversions are applied only when the formats actually diverge.
-    private static IWaveProvider BuildOutputProvider(BufferedWaveProvider buffer, WaveFormat renderFormat)
+    private IWaveProvider BuildOutputProvider(BufferedWaveProvider buffer, WaveFormat renderFormat)
     {
         IWaveProvider waveProvider = buffer;
 
@@ -84,12 +86,15 @@ public sealed class AudioEngine
                 : new StereoToMonoSampleProvider(sampleProvider);
         }
 
-        // Phase 3 seam: the DSP chain (HPF, gate, EQ, compressor, limiter, mute gate)
-        // will be inserted here, right before the signal reaches the render device.
+        // Phase 3 seam: HPF, gate, EQ, compressor, and limiter will be inserted
+        // here, before the signal reaches the render device. The mute gate
+        // occupies stage 6 and must stay the LAST wrap in the chain, since it
+        // writes zeros when toggled off and nothing downstream should touch
+        // the signal after that.
         sampleProvider = ApplyDsp(sampleProvider);
 
         return sampleProvider.ToWaveProvider();
     }
 
-    private static ISampleProvider ApplyDsp(ISampleProvider input) => input;
+    private ISampleProvider ApplyDsp(ISampleProvider input) => new MuteGateSampleProvider(input, _muteController);
 }
