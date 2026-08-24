@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- WasapiCapture/WasapiOut are obsolete in NAudio 3.x in favor of the new
+         WasapiRecorderBuilder/WasapiPlayerBuilder APIs. That's a genuine API
+         rewrite (different construction and capture model), out of scope for
+         this migration — suppressed rather than silently ignored. -->
+    <NoWarn>CS0618</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="3.0.1" />
+    <PackageReference Include="NAudio.Wasapi" Version="3.0.1" />
+  </ItemGroup>
+
+</Project>
