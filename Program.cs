@@ -1,3 +1,4 @@
+using System.Threading;
 using NAudio.CoreAudioApi;
 using NoelMic.Config;
 using NoelMic.Core;
@@ -10,6 +11,11 @@ internal static class Program
 {
     private const string VbCableFriendlyNameSubstring = "CABLE Input";
 
+    private const string VbCableNotFoundMessage =
+        "VB-CABLE is required — it provides the virtual microphone endpoint " +
+        "that Discord, games, and OBS pick up as your mic.\n\n" +
+        "Install it from https://vb-audio.com/Cable/, then restart NoelMic.";
+
     // NAudio's WASAPI/Core Audio wrappers are COM-based; running on a non-STA
     // thread causes intermittent device activation failures that only show up
     // at runtime, not at compile time.
@@ -18,6 +24,13 @@ internal static class Program
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+
+        // NotifyIcon isn't a Control and has no .Invoke() — this is the only
+        // reliable way to marshal background-thread callbacks (WASAPI
+        // Stopped events, Core Audio device notifications) onto the UI
+        // thread, so it must be set up before any of that wiring below.
+        SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+        var uiContext = SynchronizationContext.Current!;
 
         var config = AppConfig.Load();
 
@@ -37,11 +50,7 @@ internal static class Program
         var renderDevice = FindVbCableInput(enumerator);
         if (renderDevice is null)
         {
-            MessageBox.Show(
-                "VB-CABLE not found — install it from https://vb-audio.com/Cable/ and retry.",
-                "NoelMic",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+            MessageBox.Show(VbCableNotFoundMessage, "NoelMic", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
@@ -56,9 +65,14 @@ internal static class Program
         mouseHook.ToggleRequested += (_, _) => muteController.Toggle();
 
         var engine = new AudioEngine(captureDevice, renderDevice, muteController, config);
-        engine.Start();
+        var currentCaptureDeviceId = captureDevice.ID;
+        var engineDown = false;
 
-        bool OnInputDeviceSelected(MMDevice newCaptureDevice)
+        TrayIcon? trayIcon = null;
+
+        // Shared by both a manual Settings device pick and auto-recovery on
+        // replug — swaps the running engine over to newCaptureDevice.
+        bool SwitchCaptureDevice(MMDevice newCaptureDevice)
         {
             // Resolved before touching the current engine: if VB-CABLE isn't
             // found, the old engine must be left running untouched rather than
@@ -67,11 +81,7 @@ internal static class Program
             var newRenderDevice = FindVbCableInput(enumerator);
             if (newRenderDevice is null)
             {
-                MessageBox.Show(
-                    "VB-CABLE not found — install it from https://vb-audio.com/Cable/ and retry.",
-                    "NoelMic",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                MessageBox.Show(VbCableNotFoundMessage, "NoelMic", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
 
@@ -81,17 +91,59 @@ internal static class Program
             engine.Stop();
 
             engine = new AudioEngine(newCaptureDevice, newRenderDevice, muteController, config);
+            engine.Failed += (_, ex) => uiContext.Post(_ => HandleEngineFailed(ex), null);
             engine.Start();
+            currentCaptureDeviceId = newCaptureDevice.ID;
+
+            // Reset here (not at each call site) so both the manual Settings
+            // device pick and auto-recovery clear the stuck-down tray state
+            // uniformly on any successful switch.
+            engineDown = false;
+            trayIcon?.ShowDeviceRecovered();
             return true;
         }
 
-        _ = new TrayIcon(
+        void HandleEngineFailed(Exception? ex)
+        {
+            // Defensive: this runs off a marshaled background-thread callback
+            // and must never crash the message loop.
+            try
+            {
+                engineDown = true;
+                trayIcon?.ShowDeviceLost();
+            }
+            catch
+            {
+                // Swallow — see method comment.
+            }
+        }
+
+        engine.Failed += (_, ex) => uiContext.Post(_ => HandleEngineFailed(ex), null);
+        engine.Start();
+
+        trayIcon = new TrayIcon(
             muteController,
             mouseHook,
             config,
             enumerator,
-            OnInputDeviceSelected,
+            SwitchCaptureDevice,
             Application.Exit);
+
+        var deviceWatcher = new CaptureDeviceWatcher(enumerator);
+        deviceWatcher.CaptureDeviceAvailable += (_, deviceId) =>
+        {
+            // Only auto-recover onto the exact device we were using — a
+            // different device ID (e.g. a different USB port) stays a
+            // manual Settings pick, consistent with the existing
+            // no-guessing behavior in device resolution.
+            if (!engineDown || deviceId != currentCaptureDeviceId)
+            {
+                return;
+            }
+
+            var recoveredDevice = enumerator.GetDevice(deviceId);
+            SwitchCaptureDevice(recoveredDevice);
+        };
 
         // WH_MOUSE_LL callbacks deliver synchronously on the thread that
         // called SetWindowsHookEx, during that thread's message pump
@@ -103,6 +155,11 @@ internal static class Program
 
         mouseHook.Uninstall();
         engine.Stop();
+
+        // Must run before enumerator.Dispose() — MMDeviceNotificationClient's
+        // Dispose() unregisters its callback against the enumerator, which
+        // requires the enumerator to still be alive.
+        deviceWatcher.Dispose();
         enumerator.Dispose();
     }
 

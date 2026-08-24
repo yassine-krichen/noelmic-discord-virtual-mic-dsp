@@ -1,3 +1,4 @@
+using System.Threading;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
@@ -19,7 +20,18 @@ public sealed class AudioEngine
 
     private WasapiCapture? _capture;
     private WasapiOut? _output;
-    private bool _stopped;
+
+    // Plain bools aren't safe here: RecordingStopped/PlaybackStopped fire on
+    // NAudio's own capture/render callback threads, and a near-simultaneous
+    // dual failure could let both threads read "not yet stopped/reported"
+    // before either writes it, racing on disposing the same WASAPI/COM
+    // objects. CompareExchange makes the check-and-set atomic.
+    private int _stoppedFlag;
+    private int _failureReportedFlag;
+
+    // Raised when the capture or render stream dies out from under us (device
+    // unplugged, driver reset, etc.) — null on a clean, self-initiated Stop().
+    public event EventHandler<Exception?>? Failed;
 
     public AudioEngine(MMDevice captureDevice, MMDevice renderDevice, MuteController muteController, AppConfig config)
     {
@@ -45,8 +57,33 @@ public sealed class AudioEngine
         _output = new WasapiOut(_renderDevice, AudioClientShareMode.Shared, true, 100);
         _output.Init(outputProvider);
 
+        // Subscribed before starting either stream so a failure during
+        // startup itself is still caught, not just failures after Play().
+        _capture.RecordingStopped += HandleStreamStopped;
+        _output.PlaybackStopped += HandleStreamStopped;
+
         _capture.StartRecording();
         _output.Play();
+    }
+
+    // Fires on both a clean stop (Exception == null, e.g. our own Stop() call)
+    // and a device error/unplug (Exception != null) — standard NAudio idiom.
+    private void HandleStreamStopped(object? sender, StoppedEventArgs e)
+    {
+        if (e.Exception is null)
+        {
+            return;
+        }
+
+        // Capture and render can both fault around the same time; only the
+        // first failure should trigger teardown and notification.
+        if (Interlocked.CompareExchange(ref _failureReportedFlag, 1, 0) != 0)
+        {
+            return;
+        }
+
+        Stop();
+        Failed?.Invoke(this, e.Exception);
     }
 
     public void Stop()
@@ -54,7 +91,7 @@ public sealed class AudioEngine
         // Callers may end up invoking Stop() twice on the same instance (e.g.
         // a failed device switch followed by app shutdown); re-disposing
         // already-disposed WASAPI/MMDevice objects is likely to throw.
-        if (_stopped)
+        if (Interlocked.CompareExchange(ref _stoppedFlag, 1, 0) != 0)
         {
             return;
         }
@@ -72,7 +109,6 @@ public sealed class AudioEngine
             _capture?.Dispose();
             _captureDevice.Dispose();
             _renderDevice.Dispose();
-            _stopped = true;
         }
     }
 

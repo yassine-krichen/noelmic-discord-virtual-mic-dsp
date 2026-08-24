@@ -120,14 +120,17 @@ public sealed class SettingsForm : Form
 
     private void ApplySettings()
     {
-        var selectedDevice = (DeviceOption)_deviceComboBox.SelectedItem!;
+        // Reachable if Settings is opened while zero capture devices are
+        // active (e.g. mid-disconnect) — button/startup changes should still
+        // save rather than crashing on a null device selection.
+        var selectedDeviceOption = _deviceComboBox.SelectedItem as DeviceOption?;
         var selectedButton = (ToggleMouseButton)_buttonComboBox.SelectedItem!;
 
         // Only persisted on success — otherwise the old device keeps running
         // but config.json would falsely claim the new one is active, and the
         // next launch would resolve to a device the switch never actually used.
         var deviceSwitched = true;
-        if (selectedDevice.Id != _config.InputDeviceId)
+        if (selectedDeviceOption is { } selectedDevice && selectedDevice.Id != _config.InputDeviceId)
         {
             // Not disposed here — AudioEngine takes ownership and disposes it
             // as part of its own device lifecycle (see AudioEngine.Stop()).
@@ -138,9 +141,9 @@ public sealed class SettingsForm : Form
         _mouseHook.SetToggleButton(selectedButton);
         StartupRegistration.SetEnabled(_startWithWindowsCheckBox.Checked);
 
-        if (deviceSwitched)
+        if (selectedDeviceOption is { } appliedDevice && deviceSwitched)
         {
-            _config.InputDeviceId = selectedDevice.Id;
+            _config.InputDeviceId = appliedDevice.Id;
         }
 
         _config.ToggleButton = selectedButton.ToString();

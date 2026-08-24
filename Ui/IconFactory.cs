@@ -13,6 +13,7 @@ public sealed class IconFactory : IDisposable
 
     private readonly Bitmap _micOnBitmap;
     private readonly Bitmap _micOffBitmap;
+    private readonly Bitmap _micDisconnectedBitmap;
 
     // Built exactly once and reused for the app's whole lifetime — icons only
     // swap on mute toggle, and Icon.FromHandle allocates a native GDI handle
@@ -21,13 +22,17 @@ public sealed class IconFactory : IDisposable
 
     public Icon MicOffIcon { get; }
 
+    public Icon MicDisconnectedIcon { get; }
+
     public IconFactory()
     {
         _micOnBitmap = DrawMicIcon(Color.ForestGreen, slashed: false);
         _micOffBitmap = DrawMicIcon(Color.Firebrick, slashed: true);
+        _micDisconnectedBitmap = DrawDisconnectedIcon();
 
         MicOnIcon = Icon.FromHandle(_micOnBitmap.GetHicon());
         MicOffIcon = Icon.FromHandle(_micOffBitmap.GetHicon());
+        MicDisconnectedIcon = Icon.FromHandle(_micDisconnectedBitmap.GetHicon());
     }
 
     private static Bitmap DrawMicIcon(Color backgroundColor, bool slashed)
@@ -64,11 +69,36 @@ public sealed class IconFactory : IDisposable
         return bitmap;
     }
 
+    // Gray circle with a question mark — distinct from both the green mic-on
+    // and red mic-off glyphs so it can't be mistaken for either at 16px.
+    private static Bitmap DrawDisconnectedIcon()
+    {
+        var bitmap = new Bitmap(32, 32);
+
+        using (var g = Graphics.FromImage(bitmap))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.Clear(Color.Transparent);
+
+            using var backgroundBrush = new SolidBrush(Color.Gray);
+            g.FillEllipse(backgroundBrush, 1, 1, 30, 30);
+
+            using var font = new Font("Segoe UI", 16f, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var textBrush = new SolidBrush(Color.White);
+            var textSize = g.MeasureString("?", font);
+            g.DrawString("?", font, textBrush, (32 - textSize.Width) / 2, (32 - textSize.Height) / 2);
+        }
+
+        return bitmap;
+    }
+
     public void Dispose()
     {
         DestroyIcon(MicOnIcon.Handle);
         DestroyIcon(MicOffIcon.Handle);
+        DestroyIcon(MicDisconnectedIcon.Handle);
         _micOnBitmap.Dispose();
         _micOffBitmap.Dispose();
+        _micDisconnectedBitmap.Dispose();
     }
 }

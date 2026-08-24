@@ -54,7 +54,34 @@ public sealed class TrayIcon
         // click, both on the STA/UI thread, so no Invoke/marshaling is needed
         // to update the icon here.
         _muteController.MuteStateChanged += (_, isMuted) =>
+        {
             _notifyIcon.Icon = isMuted ? _iconFactory.MicOffIcon : _iconFactory.MicOnIcon;
+
+            if (_config.PlaySoundOnToggle)
+            {
+                // Fire-and-forget, non-blocking — two clearly distinct built-in
+                // system sounds, no new asset/dependency needed.
+                (isMuted ? System.Media.SystemSounds.Exclamation : System.Media.SystemSounds.Asterisk).Play();
+            }
+        };
+    }
+
+    public void ShowDeviceLost()
+    {
+        _notifyIcon.Icon = _iconFactory.MicDisconnectedIcon;
+        _notifyIcon.ShowBalloonTip(
+            5000,
+            "NoelMic",
+            "Microphone disconnected. Check Settings or reconnect the device.",
+            ToolTipIcon.Warning);
+    }
+
+    public void ShowDeviceRecovered()
+    {
+        // Restored from the CURRENT mute state, not assumed "mic-on" — mute
+        // could have been toggled while the device was down.
+        _notifyIcon.Icon = _muteController.IsMuted ? _iconFactory.MicOffIcon : _iconFactory.MicOnIcon;
+        _notifyIcon.ShowBalloonTip(3000, "NoelMic", "Microphone reconnected.", ToolTipIcon.Info);
     }
 
     private void ShowSettings()
