@@ -13,6 +13,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The test project lives in a subdirectory; without this exclusion the
+         default SDK glob would compile NoelMic.Tests' own .cs files (and its
+         xunit references) straight into this project. -->
+    <Compile Remove="NoelMic.Tests\**" />
+    <EmbeddedResource Remove="NoelMic.Tests\**" />
+    <None Remove="NoelMic.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="NAudio" Version="3.0.1" />
     <PackageReference Include="NAudio.Wasapi" Version="3.0.1" />
   </ItemGroup>

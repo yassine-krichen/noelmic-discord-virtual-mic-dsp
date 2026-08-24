@@ -1,6 +1,8 @@
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using NoelMic.Config;
+using NoelMic.Dsp;
 
 namespace NoelMic.Core;
 
@@ -13,15 +15,17 @@ public sealed class AudioEngine
     private readonly MMDevice _captureDevice;
     private readonly MMDevice _renderDevice;
     private readonly MuteController _muteController;
+    private readonly AppConfig _config;
 
     private WasapiCapture? _capture;
     private WasapiOut? _output;
 
-    public AudioEngine(MMDevice captureDevice, MMDevice renderDevice, MuteController muteController)
+    public AudioEngine(MMDevice captureDevice, MMDevice renderDevice, MuteController muteController, AppConfig config)
     {
         _captureDevice = captureDevice;
         _renderDevice = renderDevice;
         _muteController = muteController;
+        _config = config;
     }
 
     public void Start()
@@ -86,15 +90,16 @@ public sealed class AudioEngine
                 : new StereoToMonoSampleProvider(sampleProvider);
         }
 
-        // Phase 3 seam: HPF, gate, EQ, compressor, and limiter will be inserted
-        // here, before the signal reaches the render device. The mute gate
-        // occupies stage 6 and must stay the LAST wrap in the chain, since it
-        // writes zeros when toggled off and nothing downstream should touch
-        // the signal after that.
         sampleProvider = ApplyDsp(sampleProvider);
 
         return sampleProvider.ToWaveProvider();
     }
 
-    private ISampleProvider ApplyDsp(ISampleProvider input) => new MuteGateSampleProvider(input, _muteController);
+    private ISampleProvider ApplyDsp(ISampleProvider input)
+    {
+        // The mute gate must stay outermost/last: it writes zeros when
+        // toggled off, and nothing downstream should touch the signal after that.
+        var dspChain = new DspChain(input, _config);
+        return new MuteGateSampleProvider(dspChain, _muteController);
+    }
 }

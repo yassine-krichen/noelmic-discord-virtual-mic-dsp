@@ -1,4 +1,5 @@
 using NAudio.CoreAudioApi;
+using NoelMic.Config;
 using NoelMic.Core;
 using NoelMic.Input;
 
@@ -14,6 +15,8 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        var config = AppConfig.Load();
+
         using var enumerator = new MMDeviceEnumerator();
 
         var captureDevice = PickCaptureDevice(enumerator);
@@ -35,7 +38,7 @@ internal static class Program
         var mouseHook = new MouseHook();
         mouseHook.ToggleRequested += (_, _) => muteController.Toggle();
 
-        var engine = new AudioEngine(captureDevice, renderDevice, muteController);
+        var engine = new AudioEngine(captureDevice, renderDevice, muteController, config);
         engine.Start();
 
         Console.WriteLine($"Passthrough running: \"{captureDevice.FriendlyName}\" -> \"{renderDevice.FriendlyName}\"");
