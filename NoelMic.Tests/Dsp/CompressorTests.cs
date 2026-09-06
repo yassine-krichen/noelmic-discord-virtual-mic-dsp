@@ -110,7 +110,7 @@ public class CompressorTests
     }
 
     [Fact]
-    public void CurrentReductionDb_IsAtOrBelowZeroAndNearZeroForaSignalBelowThreshold()
+    public void CurrentReductionDb_IsAtOrBelowZeroAndNearZeroForASignalBelowThreshold()
     {
         const float amplitude = 0.05f; // below -20dB threshold
         var source = new ConstantSampleProvider(SampleRate, channels: 1, amplitude);
