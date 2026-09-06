@@ -13,6 +13,8 @@ public sealed class Compressor : ISampleProvider
     private readonly double _ratio;
     private readonly float _attackCoeff;
     private readonly float _releaseCoeff;
+    private readonly float _makeupGainLinear;
+    private readonly float _mix;
 
     // Per-channel envelope and gain state, sized once at construction — this
     // is the only allocation for this stage, never per-Read.
@@ -22,7 +24,8 @@ public sealed class Compressor : ISampleProvider
     // NoiseGate has its own envelope follower with a different curve (binary
     // open/close) and purpose (silence removal vs. dynamic range control) —
     // the two don't share enough to earn a common base class.
-    public Compressor(ISampleProvider source, double thresholdDb, double ratio, float attackMs = 10f, float releaseMs = 100f)
+    public Compressor(ISampleProvider source, double thresholdDb, double ratio,
+        float attackMs = 5f, float releaseMs = 100f, double makeupGainDb = 0.0, double mixPercent = 100.0)
     {
         _source = source;
         _thresholdDb = thresholdDb;
@@ -31,6 +34,8 @@ public sealed class Compressor : ISampleProvider
         var sampleRate = source.WaveFormat.SampleRate;
         _attackCoeff = MathF.Exp(-1f / (attackMs / 1000f * sampleRate));
         _releaseCoeff = MathF.Exp(-1f / (releaseMs / 1000f * sampleRate));
+        _makeupGainLinear = MathF.Pow(10f, (float)makeupGainDb / 20f);
+        _mix = (float)(mixPercent / 100.0);
 
         _envelope = new float[source.WaveFormat.Channels];
         _gain = new float[source.WaveFormat.Channels];
@@ -70,7 +75,11 @@ public sealed class Compressor : ISampleProvider
             var gainCoeff = targetGain < _gain[ch] ? _attackCoeff : _releaseCoeff;
             _gain[ch] = gainCoeff * _gain[ch] + (1f - gainCoeff) * targetGain;
 
-            buffer[i] = x * _gain[ch];
+            // Makeup gain is a fixed post-multiply, not folded into _gain —
+            // feeding it through the envelope-driven smoothing would slow
+            // down attack/release ballistics it has nothing to do with.
+            var wet = x * _gain[ch] * _makeupGainLinear;
+            buffer[i] = x * (1f - _mix) + wet * _mix;
         }
 
         return samplesRead;

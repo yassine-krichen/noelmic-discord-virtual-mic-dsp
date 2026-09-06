@@ -20,6 +20,7 @@ public sealed class AudioEngine
 
     private WasapiCapture? _capture;
     private WasapiOut? _output;
+    private DspChain? _dspChain;
 
     // Plain bools aren't safe here: RecordingStopped/PlaybackStopped fire on
     // NAudio's own capture/render callback threads, and a near-simultaneous
@@ -141,12 +142,16 @@ public sealed class AudioEngine
         return sampleProvider.ToWaveProvider();
     }
 
+    public float CurrentInputLevelDb => _dspChain?.CurrentInputLevelDb ?? -100f;
+
     private ISampleProvider ApplyDsp(ISampleProvider input)
     {
-        // The mute gate must stay outermost/last regardless of DspEnabled: it's
-        // how the toggle hotkey mutes the mic, not a DSP quality knob, so
-        // bypassing the DSP chain for A/B testing must never bypass muting too.
-        ISampleProvider processed = _config.DspEnabled ? new DspChain(input, _config) : input;
-        return new MuteGateSampleProvider(processed, _muteController);
+        // The mute gate must stay outermost/last: it's how the toggle hotkey
+        // mutes the mic, not a DSP quality knob. A/B'ing raw vs. processed
+        // audio is now done via the "Raw" preset (near-unity DSP chain)
+        // rather than skipping the chain outright, so the chain is always
+        // constructed and CurrentInputLevelDb always has a real meter behind it.
+        _dspChain = new DspChain(input, _config);
+        return new MuteGateSampleProvider(_dspChain, _muteController);
     }
 }

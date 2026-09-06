@@ -59,4 +59,53 @@ public class CompressorTests
         compressor.ReadAll(sampleCount: 20000);
         return compressor.ReadAll(sampleCount: 1000).Rms();
     }
+
+    [Fact]
+    public void Read_WithMixPercentAt100_ProducesSameOutputAsDefaultMix()
+    {
+        const float amplitude = 0.5f;
+        var defaultOutput = SettledRms(amplitude, ratio: 4.0);
+
+        var source = new ConstantSampleProvider(SampleRate, channels: 1, value: amplitude);
+        var compressor = new Compressor(source, ThresholdDb, ratio: 4.0, mixPercent: 100.0);
+        compressor.ReadAll(sampleCount: 20000);
+        var explicitOutput = compressor.ReadAll(sampleCount: 1000).Rms();
+
+        Assert.Equal(defaultOutput, explicitOutput, precision: 5);
+    }
+
+    [Fact]
+    public void Read_WithMixPercentAtZero_PassesInputThroughUnchangedBypassingReductionAndMakeupGain()
+    {
+        const float amplitude = 0.5f; // above threshold, so a wet signal would clearly differ
+        var source = new ConstantSampleProvider(SampleRate, channels: 1, value: amplitude);
+        var compressor = new Compressor(source, ThresholdDb, ratio: 4.0, makeupGainDb: 6.0, mixPercent: 0.0);
+
+        var output = compressor.ReadAll(sampleCount: 1000);
+
+        Assert.All(output, sample => Assert.Equal(amplitude, sample));
+    }
+
+    [Fact]
+    public void Read_WithIntermediateMixPercent_LandsBetweenDryAndFullyWetOutput()
+    {
+        const float amplitude = 0.5f;
+
+        var dryRms = MixedSettledRms(amplitude, mixPercent: 0.0);
+        var wetRms = MixedSettledRms(amplitude, mixPercent: 100.0);
+        var midRms = MixedSettledRms(amplitude, mixPercent: 75.0);
+
+        Assert.True(
+            midRms > Math.Min(dryRms, wetRms) && midRms < Math.Max(dryRms, wetRms),
+            $"Expected mix=75 RMS ({midRms}) to land strictly between dry ({dryRms}) and fully wet ({wetRms}).");
+    }
+
+    private static float MixedSettledRms(float amplitude, double mixPercent)
+    {
+        var source = new ConstantSampleProvider(SampleRate, channels: 1, value: amplitude);
+        var compressor = new Compressor(source, ThresholdDb, ratio: 4.0, makeupGainDb: 3.0, mixPercent: mixPercent);
+
+        compressor.ReadAll(sampleCount: 20000);
+        return compressor.ReadAll(sampleCount: 1000).Rms();
+    }
 }

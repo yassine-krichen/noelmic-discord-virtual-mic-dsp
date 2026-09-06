@@ -64,6 +64,72 @@ public class BiquadCoefficientsTests
         AssertAllFinite(coefficients);
     }
 
+    [Theory]
+    [InlineData(48000f, 150f, 6f)]
+    [InlineData(48000f, 150f, -6f)]
+    [InlineData(48000f, 150f, 0f)]
+    [InlineData(48000f, 5000f, 12f)]
+    [InlineData(48000f, 5000f, -12f)]
+    [InlineData(44100f, 90f, 4f)]
+    public void LowShelf_ProducesFiniteCoefficients_ForNormalFrequencyAndGainRange(
+        float sampleRate,
+        float f0,
+        float dBgain)
+    {
+        var coefficients = BiquadCoefficients.LowShelf(sampleRate, f0, dBgain);
+
+        AssertAllFinite(coefficients);
+    }
+
+    [Theory]
+    [InlineData(48000f, 21600f, 6f)] // exactly at the sampleRate*0.45 clamp boundary
+    [InlineData(48000f, 24000f, 6f)] // exactly at Nyquist
+    [InlineData(48000f, 30000f, -6f)] // above Nyquist
+    [InlineData(48000f, 100000f, 6f)]
+    [InlineData(48000f, 0f, -6f)]
+    public void LowShelf_ClampsOutOfRangeFrequency_WithoutProducingNonFiniteCoefficients(
+        float sampleRate,
+        float f0,
+        float dBgain)
+    {
+        var coefficients = BiquadCoefficients.LowShelf(sampleRate, f0, dBgain);
+
+        AssertAllFinite(coefficients);
+    }
+
+    [Theory]
+    [InlineData(48000f, 4000f, 6f)]
+    [InlineData(48000f, 4000f, -6f)]
+    [InlineData(48000f, 4000f, 0f)]
+    [InlineData(48000f, 11000f, 12f)]
+    [InlineData(48000f, 11000f, -12f)]
+    [InlineData(44100f, 8000f, 4f)]
+    public void HighShelf_ProducesFiniteCoefficients_ForNormalFrequencyAndGainRange(
+        float sampleRate,
+        float f0,
+        float dBgain)
+    {
+        var coefficients = BiquadCoefficients.HighShelf(sampleRate, f0, dBgain);
+
+        AssertAllFinite(coefficients);
+    }
+
+    [Theory]
+    [InlineData(48000f, 21600f, 6f)] // exactly at the sampleRate*0.45 clamp boundary
+    [InlineData(48000f, 24000f, 6f)] // exactly at Nyquist
+    [InlineData(48000f, 30000f, -6f)] // above Nyquist
+    [InlineData(48000f, 100000f, 6f)]
+    [InlineData(48000f, 0f, -6f)]
+    public void HighShelf_ClampsOutOfRangeFrequency_WithoutProducingNonFiniteCoefficients(
+        float sampleRate,
+        float f0,
+        float dBgain)
+    {
+        var coefficients = BiquadCoefficients.HighShelf(sampleRate, f0, dBgain);
+
+        AssertAllFinite(coefficients);
+    }
+
     private static void AssertAllFinite(BiquadCoefficients coefficients)
     {
         Assert.True(float.IsFinite(coefficients.B0), "B0 must be finite");

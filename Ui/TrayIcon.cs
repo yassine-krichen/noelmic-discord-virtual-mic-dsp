@@ -17,6 +17,7 @@ public sealed class TrayIcon
     private readonly MMDeviceEnumerator _enumerator;
     private readonly Func<MMDevice, bool> _onInputDeviceSelected;
     private readonly Action _onExitRequested;
+    private readonly Func<float> _getInputLevelDb;
     private readonly IconFactory _iconFactory;
     private readonly NotifyIcon _notifyIcon;
 
@@ -26,7 +27,8 @@ public sealed class TrayIcon
         AppConfig config,
         MMDeviceEnumerator enumerator,
         Func<MMDevice, bool> onInputDeviceSelected,
-        Action onExitRequested)
+        Action onExitRequested,
+        Func<float> getInputLevelDb)
     {
         _muteController = muteController;
         _mouseHook = mouseHook;
@@ -34,6 +36,7 @@ public sealed class TrayIcon
         _enumerator = enumerator;
         _onInputDeviceSelected = onInputDeviceSelected;
         _onExitRequested = onExitRequested;
+        _getInputLevelDb = getInputLevelDb;
 
         _iconFactory = new IconFactory();
 
@@ -86,7 +89,7 @@ public sealed class TrayIcon
 
     private void ShowSettings()
     {
-        using var settingsForm = new SettingsForm(_config, _enumerator, _mouseHook, _onInputDeviceSelected);
+        using var settingsForm = new SettingsForm(_config, _enumerator, _mouseHook, _onInputDeviceSelected, _getInputLevelDb);
         settingsForm.ShowDialog();
     }
 

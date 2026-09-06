@@ -32,4 +32,47 @@ public class BiquadTests
 
         return measured.Rms();
     }
+
+    [Fact]
+    public void HighShelf_WithPositiveGain_RaisesHighFrequencyOutputAboveLowFrequencyOutput()
+    {
+        const int settleSamples = 2000;
+        const int measureSamples = 48000;
+        var coefficients = BiquadCoefficients.HighShelf(SampleRate, f0: 4000f, dBgain: 12f);
+
+        var lowFreqRms = MeasureShelfRms(coefficients, toneHz: 200f, settleSamples, measureSamples);
+        var highFreqRms = MeasureShelfRms(coefficients, toneHz: 10000f, settleSamples, measureSamples);
+
+        Assert.True(
+            highFreqRms > lowFreqRms * 1.5f,
+            $"Expected 10kHz output (RMS={highFreqRms}) to be boosted well above 200Hz output " +
+            $"(RMS={lowFreqRms}) through a +12dB high shelf at 4kHz.");
+    }
+
+    [Fact]
+    public void LowShelf_WithPositiveGain_RaisesLowFrequencyOutputAboveHighFrequencyOutput()
+    {
+        const int settleSamples = 2000;
+        const int measureSamples = 48000;
+        var coefficients = BiquadCoefficients.LowShelf(SampleRate, f0: 200f, dBgain: 12f);
+
+        var lowFreqRms = MeasureShelfRms(coefficients, toneHz: 50f, settleSamples, measureSamples);
+        var highFreqRms = MeasureShelfRms(coefficients, toneHz: 5000f, settleSamples, measureSamples);
+
+        Assert.True(
+            lowFreqRms > highFreqRms * 1.5f,
+            $"Expected 50Hz output (RMS={lowFreqRms}) to be boosted well above 5000Hz output " +
+            $"(RMS={highFreqRms}) through a +12dB low shelf at 200Hz.");
+    }
+
+    private static float MeasureShelfRms(BiquadCoefficients coefficients, float toneHz, int settleSamples, int measureSamples)
+    {
+        var source = new SineWaveSampleProvider(SampleRate, channels: 1, toneHz);
+        var filter = new Biquad(source, coefficients);
+
+        filter.ReadAll(settleSamples);
+        var measured = filter.ReadAll(measureSamples);
+
+        return measured.Rms();
+    }
 }

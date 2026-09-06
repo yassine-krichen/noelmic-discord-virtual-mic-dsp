@@ -63,6 +63,72 @@ public readonly struct BiquadCoefficients
 
         return new BiquadCoefficients { B0 = b0, B1 = b1, B2 = b2, A1 = a1, A2 = a2 };
     }
+
+    /// <summary>
+    /// RBJ Audio EQ Cookbook low shelf filter.
+    /// </summary>
+    public static BiquadCoefficients LowShelf(float sampleRate, float f0, float dBgain, float shelfSlope = 1f)
+    {
+        f0 = Math.Clamp(f0, 20f, sampleRate * 0.45f);
+
+        // Shelf gain uses A = 10^(dBgain/40), NOT /20 like PeakingEq — the RBJ
+        // cookbook defines shelf "A" as the square root of the peaking "A",
+        // hand-simplifying this to /20 silently halves every shelf's dB gain.
+        var a = MathF.Pow(10f, dBgain / 40f);
+        var w0 = 2f * MathF.PI * f0 / sampleRate;
+        var cosW0 = MathF.Cos(w0);
+        var sinW0 = MathF.Sin(w0);
+        var alpha = sinW0 / 2f * MathF.Sqrt((a + 1f / a) * (1f / shelfSlope - 1f) + 2f);
+        var sqrtAAlpha2 = 2f * MathF.Sqrt(a) * alpha;
+
+        var a0 = (a + 1f) + (a - 1f) * cosW0 + sqrtAAlpha2;
+        var b0 = a * ((a + 1f) - (a - 1f) * cosW0 + sqrtAAlpha2) / a0;
+        var b1 = 2f * a * ((a - 1f) - (a + 1f) * cosW0) / a0;
+        var b2 = a * ((a + 1f) - (a - 1f) * cosW0 - sqrtAAlpha2) / a0;
+        var a1 = -2f * ((a - 1f) + (a + 1f) * cosW0) / a0;
+        var a2 = ((a + 1f) + (a - 1f) * cosW0 - sqrtAAlpha2) / a0;
+
+        return new BiquadCoefficients { B0 = b0, B1 = b1, B2 = b2, A1 = a1, A2 = a2 };
+    }
+
+    /// <summary>
+    /// RBJ Audio EQ Cookbook high shelf filter.
+    /// </summary>
+    public static BiquadCoefficients HighShelf(float sampleRate, float f0, float dBgain, float shelfSlope = 1f)
+    {
+        f0 = Math.Clamp(f0, 20f, sampleRate * 0.45f);
+
+        // Same /40 (not /20) shelf-gain convention as LowShelf — see the
+        // comment there.
+        var a = MathF.Pow(10f, dBgain / 40f);
+        var w0 = 2f * MathF.PI * f0 / sampleRate;
+        var cosW0 = MathF.Cos(w0);
+        var sinW0 = MathF.Sin(w0);
+        var alpha = sinW0 / 2f * MathF.Sqrt((a + 1f / a) * (1f / shelfSlope - 1f) + 2f);
+        var sqrtAAlpha2 = 2f * MathF.Sqrt(a) * alpha;
+
+        var a0 = (a + 1f) - (a - 1f) * cosW0 + sqrtAAlpha2;
+        var b0 = a * ((a + 1f) + (a - 1f) * cosW0 + sqrtAAlpha2) / a0;
+        var b1 = -2f * a * ((a - 1f) + (a + 1f) * cosW0) / a0;
+        var b2 = a * ((a + 1f) + (a - 1f) * cosW0 - sqrtAAlpha2) / a0;
+        var a1 = 2f * ((a - 1f) - (a + 1f) * cosW0) / a0;
+        var a2 = ((a + 1f) - (a - 1f) * cosW0 - sqrtAAlpha2) / a0;
+
+        return new BiquadCoefficients { B0 = b0, B1 = b1, B2 = b2, A1 = a1, A2 = a2 };
+    }
+
+    /// <summary>
+    /// One sample of direct-form-II-transposed biquad processing. Shared by
+    /// <see cref="Biquad"/>, the de-esser's sidechain detection HPF, and its
+    /// reduction shelf — the same per-sample math, three call sites.
+    /// </summary>
+    public static float Apply(in BiquadCoefficients c, float x, ref float z1, ref float z2)
+    {
+        var y = c.B0 * x + z1;
+        z1 = c.B1 * x - c.A1 * y + z2;
+        z2 = c.B2 * x - c.A2 * y;
+        return y;
+    }
 }
 
 /// <summary>
@@ -93,18 +159,11 @@ public sealed class Biquad : ISampleProvider
     {
         var samplesRead = _source.Read(buffer);
         var channels = _z1.Length;
-        var (b0, b1, b2, a1, a2) = (_coefficients.B0, _coefficients.B1, _coefficients.B2, _coefficients.A1, _coefficients.A2);
 
         for (var i = 0; i < samplesRead; i++)
         {
             var ch = i % channels;
-            var x = buffer[i];
-
-            var y = b0 * x + _z1[ch];
-            _z1[ch] = b1 * x - a1 * y + _z2[ch];
-            _z2[ch] = b2 * x - a2 * y;
-
-            buffer[i] = y;
+            buffer[i] = BiquadCoefficients.Apply(in _coefficients, buffer[i], ref _z1[ch], ref _z2[ch]);
         }
 
         return samplesRead;
