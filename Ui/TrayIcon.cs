@@ -17,7 +17,10 @@ public sealed class TrayIcon
     private readonly MMDeviceEnumerator _enumerator;
     private readonly Func<MMDevice, bool> _onInputDeviceSelected;
     private readonly Action _onExitRequested;
-    private readonly Func<float> _getInputLevelDb;
+    private readonly Func<MeteringSnapshot> _getMeteringSnapshot;
+    private readonly Action _onParametersChanged;
+    private readonly Action _startCalibration;
+    private readonly Func<(bool IsRunning, bool IsDone, int QualifyingFrameCount, float ComputedGainDb)> _getCalibrationStatus;
     private readonly IconFactory _iconFactory;
     private readonly NotifyIcon _notifyIcon;
 
@@ -28,7 +31,10 @@ public sealed class TrayIcon
         MMDeviceEnumerator enumerator,
         Func<MMDevice, bool> onInputDeviceSelected,
         Action onExitRequested,
-        Func<float> getInputLevelDb)
+        Func<MeteringSnapshot> getMeteringSnapshot,
+        Action onParametersChanged,
+        Action startCalibration,
+        Func<(bool IsRunning, bool IsDone, int QualifyingFrameCount, float ComputedGainDb)> getCalibrationStatus)
     {
         _muteController = muteController;
         _mouseHook = mouseHook;
@@ -36,7 +42,10 @@ public sealed class TrayIcon
         _enumerator = enumerator;
         _onInputDeviceSelected = onInputDeviceSelected;
         _onExitRequested = onExitRequested;
-        _getInputLevelDb = getInputLevelDb;
+        _getMeteringSnapshot = getMeteringSnapshot;
+        _onParametersChanged = onParametersChanged;
+        _startCalibration = startCalibration;
+        _getCalibrationStatus = getCalibrationStatus;
 
         _iconFactory = new IconFactory();
 
@@ -89,7 +98,15 @@ public sealed class TrayIcon
 
     private void ShowSettings()
     {
-        using var settingsForm = new SettingsForm(_config, _enumerator, _mouseHook, _onInputDeviceSelected, _getInputLevelDb);
+        using var settingsForm = new SettingsForm(
+            _config,
+            _enumerator,
+            _mouseHook,
+            _onInputDeviceSelected,
+            _getMeteringSnapshot,
+            _onParametersChanged,
+            _startCalibration,
+            _getCalibrationStatus);
         settingsForm.ShowDialog();
     }
 

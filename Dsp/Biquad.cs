@@ -138,7 +138,7 @@ public readonly struct BiquadCoefficients
 public sealed class Biquad : ISampleProvider
 {
     private readonly ISampleProvider _source;
-    private readonly BiquadCoefficients _coefficients;
+    private BiquadCoefficients _coefficients;
 
     // Per-channel filter state, sized once at construction — this is the only
     // allocation for this stage, never per-Read.
@@ -154,6 +154,13 @@ public sealed class Biquad : ISampleProvider
     }
 
     public WaveFormat WaveFormat => _source.WaveFormat;
+
+    // Only the coefficients change; _z1/_z2 filter state is left untouched so
+    // a live parameter change doesn't click by resetting the filter's memory.
+    public void UpdateCoefficients(BiquadCoefficients next)
+    {
+        _coefficients = next;
+    }
 
     public int Read(Span<float> buffer)
     {

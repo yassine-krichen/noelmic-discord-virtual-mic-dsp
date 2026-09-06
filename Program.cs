@@ -128,11 +128,14 @@ internal static class Program
             enumerator,
             SwitchCaptureDevice,
             Application.Exit,
-            // Closes over the same mutable `engine` local that
-            // SwitchCaptureDevice reassigns, so this follows engine swaps
+            // All four close over the same mutable `engine` local that
+            // SwitchCaptureDevice reassigns, so they follow engine swaps
             // (device changes, auto-recovery) automatically without needing
             // to be re-wired anywhere.
-            () => engine.CurrentInputLevelDb);
+            () => engine.GetMeteringSnapshot(),
+            () => engine.UpdateParameters(),
+            () => engine.StartCalibration(),
+            () => engine.GetCalibrationStatus());
 
         var deviceWatcher = new CaptureDeviceWatcher(enumerator);
         deviceWatcher.CaptureDeviceAvailable += (_, deviceId) =>

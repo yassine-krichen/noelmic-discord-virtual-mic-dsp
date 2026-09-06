@@ -9,9 +9,10 @@ namespace NoelMic.Dsp;
 public sealed class Limiter : ISampleProvider
 {
     private readonly ISampleProvider _source;
-    private readonly float _ceilingLinear;
-    private readonly float _attackCoeff;
-    private readonly float _releaseCoeff;
+    private readonly float _sampleRate;
+    private float _ceilingLinear;
+    private float _attackCoeff;
+    private float _releaseCoeff;
 
     // Per-channel peak envelope and gain state, sized once at construction —
     // this is the only allocation for this stage, never per-Read.
@@ -21,11 +22,9 @@ public sealed class Limiter : ISampleProvider
     public Limiter(ISampleProvider source, float ceilingDb = -1f, float attackMs = 2f, float releaseMs = 50f)
     {
         _source = source;
-        _ceilingLinear = MathF.Pow(10f, ceilingDb / 20f);
+        _sampleRate = source.WaveFormat.SampleRate;
 
-        var sampleRate = source.WaveFormat.SampleRate;
-        _attackCoeff = MathF.Exp(-1f / (attackMs / 1000f * sampleRate));
-        _releaseCoeff = MathF.Exp(-1f / (releaseMs / 1000f * sampleRate));
+        SetCoefficients(ceilingDb, attackMs, releaseMs);
 
         _envelope = new float[source.WaveFormat.Channels];
         _gain = new float[source.WaveFormat.Channels];
@@ -33,6 +32,22 @@ public sealed class Limiter : ISampleProvider
     }
 
     public WaveFormat WaveFormat => _source.WaveFormat;
+
+    // Shared by the constructor and UpdateParameters — only derived
+    // coefficient fields are touched here, never the _envelope/_gain state
+    // arrays, so a live parameter change never resets limiter state and
+    // clicks.
+    private void SetCoefficients(float ceilingDb, float attackMs, float releaseMs)
+    {
+        _ceilingLinear = MathF.Pow(10f, ceilingDb / 20f);
+        _attackCoeff = MathF.Exp(-1f / (attackMs / 1000f * _sampleRate));
+        _releaseCoeff = MathF.Exp(-1f / (releaseMs / 1000f * _sampleRate));
+    }
+
+    public void UpdateParameters(float ceilingDb, float attackMs, float releaseMs)
+    {
+        SetCoefficients(ceilingDb, attackMs, releaseMs);
+    }
 
     public int Read(Span<float> buffer)
     {

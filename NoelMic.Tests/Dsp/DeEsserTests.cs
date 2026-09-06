@@ -103,4 +103,53 @@ public class DeEsserTests
             }
         }
     }
+
+    [Fact]
+    public void CurrentReductionDb_IsNonNegativeAndFiniteRegardlessOfSibilanceLevel()
+    {
+        var source = new SineWaveSampleProvider(SampleRate, channels: 1, frequencyHz: 9000f, amplitude: 0.5f);
+        var deEsser = new DeEsser(source, deEsserHz: 6500f, thresholdDb: -30, ratio: 4.0, maxReductionDb: 8f);
+
+        deEsser.ReadAll(sampleCount: 20000);
+
+        Assert.True(float.IsFinite(deEsser.CurrentReductionDb));
+        Assert.True(deEsser.CurrentReductionDb >= 0f, $"Expected a non-negative reduction amount, got {deEsser.CurrentReductionDb}dB.");
+    }
+
+    [Fact]
+    public void UpdateParameters_MidStream_LoweringThresholdIncreasesReductionWithoutClickingOrNaN()
+    {
+        const float amplitude = 0.5f;
+        var inputRms = amplitude / MathF.Sqrt(2f);
+        var source = new SineWaveSampleProvider(SampleRate, channels: 1, frequencyHz: 9000f, amplitude);
+        var deEsser = new DeEsser(source, deEsserHz: 6500f, thresholdDb: -20, ratio: 2.0, maxReductionDb: 10f);
+
+        deEsser.ReadAll(sampleCount: 20000);
+        var reductionBefore = deEsser.CurrentReductionDb;
+
+        deEsser.UpdateParameters(deEsserHz: 6500f, thresholdDb: -50, ratio: 8.0, maxReductionDb: 10f);
+
+        var buffer = new float[64];
+        deEsser.Read(buffer);
+        Assert.All(buffer, sample => Assert.True(float.IsFinite(sample), $"Sample {sample} was non-finite right after UpdateParameters."));
+
+        // Sidechain envelope and shelf filter memory are preserved across
+        // UpdateParameters, so nothing right after the update should spike
+        // past a modest multiple of the input amplitude.
+        Assert.All(buffer, sample => Assert.True(
+            MathF.Abs(sample) < amplitude * 3f,
+            $"Sample {sample} spiked well beyond the input amplitude ({amplitude}) right after UpdateParameters."));
+
+        deEsser.ReadAll(sampleCount: 20000);
+        var reductionAfter = deEsser.CurrentReductionDb;
+        var settledOutputRms = deEsser.ReadAll(sampleCount: 5000).Rms();
+
+        Assert.True(
+            reductionAfter > reductionBefore,
+            $"Expected a much lower threshold and higher ratio to increase the reduction amount, " +
+            $"got before={reductionBefore}dB, after={reductionAfter}dB.");
+        Assert.True(
+            settledOutputRms < inputRms * 0.85f,
+            $"Expected the new parameters to measurably reduce output below the unprocessed RMS ({inputRms}), got {settledOutputRms}.");
+    }
 }

@@ -20,7 +20,7 @@ public sealed class AudioEngine
 
     private WasapiCapture? _capture;
     private WasapiOut? _output;
-    private DspChain? _dspChain;
+    private volatile DspChain? _dspChain;
 
     // Plain bools aren't safe here: RecordingStopped/PlaybackStopped fire on
     // NAudio's own capture/render callback threads, and a near-simultaneous
@@ -142,7 +142,17 @@ public sealed class AudioEngine
         return sampleProvider.ToWaveProvider();
     }
 
-    public float CurrentInputLevelDb => _dspChain?.CurrentInputLevelDb ?? -100f;
+    // Applied to the running DspChain's parameter store — the audio thread
+    // picks up the new coefficients on its next Read() without any restart.
+    public void UpdateParameters() => _dspChain?.UpdateParameters(_config);
+
+    public void StartCalibration() => _dspChain?.StartCalibration();
+
+    public (bool IsRunning, bool IsDone, int QualifyingFrameCount, float ComputedGainDb) GetCalibrationStatus() =>
+        _dspChain?.GetCalibrationStatus() ?? (false, false, 0, 0f);
+
+    public MeteringSnapshot GetMeteringSnapshot() =>
+        _dspChain?.GetMeteringSnapshot() ?? new MeteringSnapshot(-100f, -100f, false, 0f, 0f, 0f);
 
     private ISampleProvider ApplyDsp(ISampleProvider input)
     {

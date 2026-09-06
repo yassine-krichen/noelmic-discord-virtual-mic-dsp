@@ -61,4 +61,36 @@ public class LimiterTests
             settled.Rms() > amplitude * 0.95f,
             $"Expected below-ceiling signal to pass through unchanged, got RMS={settled.Rms()} for input {amplitude}.");
     }
+
+    [Fact]
+    public void UpdateParameters_MidStream_TighterCeilingReducesOutputFurtherWithoutNaNAndNeverExceedsTheNewCeiling()
+    {
+        const float amplitude = 0.9f; // above both the old and new ceiling.
+        var oldCeilingLinear = MathF.Pow(10f, CeilingDb / 20f);
+        const float newCeilingDb = -12f;
+        var newCeilingLinear = MathF.Pow(10f, newCeilingDb / 20f);
+
+        var source = new ConstantSampleProvider(SampleRate, channels: 1, value: amplitude);
+        var limiter = new Limiter(source, ceilingDb: CeilingDb);
+
+        var settledBefore = limiter.ReadAll(sampleCount: 5000);
+        Assert.True(
+            MathF.Abs(settledBefore[^1]) > newCeilingLinear,
+            "Expected the pre-update settled output to sit above the tighter ceiling we're about to switch to.");
+
+        limiter.UpdateParameters(ceilingDb: newCeilingDb, attackMs: 2f, releaseMs: 50f);
+
+        // The hard clamp uses the ceiling field directly (not smoothed), so
+        // it takes effect on literally the very next sample -- unlike the
+        // envelope-driven gain, there's no transitional overshoot to allow for.
+        var afterUpdate = limiter.ReadAll(sampleCount: 5000);
+        Assert.All(afterUpdate, sample => Assert.True(float.IsFinite(sample), $"Sample {sample} was non-finite right after UpdateParameters."));
+        Assert.All(afterUpdate, sample => Assert.True(
+            MathF.Abs(sample) <= newCeilingLinear + 1e-5f,
+            $"Sample {sample} exceeded the newly-updated ceiling ({newCeilingLinear})."));
+
+        Assert.True(
+            oldCeilingLinear > newCeilingLinear,
+            "Sanity check: the new ceiling must actually be lower for this test to be meaningful.");
+    }
 }

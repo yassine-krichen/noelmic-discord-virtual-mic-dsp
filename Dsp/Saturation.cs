@@ -9,13 +9,24 @@ namespace NoelMic.Dsp;
 public sealed class Saturation : ISampleProvider
 {
     private readonly ISampleProvider _source;
-    private readonly float _drive;
-    private readonly float _normalizer;
+    private float _drive;
+    private float _normalizer;
 
     public Saturation(ISampleProvider source, float drive)
     {
         _source = source;
+        SetDrive(drive);
+    }
 
+    public WaveFormat WaveFormat => _source.WaveFormat;
+
+    public void UpdateDrive(float drive)
+    {
+        SetDrive(drive);
+    }
+
+    private void SetDrive(float drive)
+    {
         // Floored to avoid a division by zero below; a drive this close to 0
         // is indistinguishable from off anyway.
         _drive = MathF.Max(drive, 1e-4f);
@@ -25,8 +36,6 @@ public sealed class Saturation : ISampleProvider
         // spec, not a bug.
         _normalizer = 1f / MathF.Tanh(_drive);
     }
-
-    public WaveFormat WaveFormat => _source.WaveFormat;
 
     public int Read(Span<float> buffer)
     {

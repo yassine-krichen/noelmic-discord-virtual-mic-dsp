@@ -9,11 +9,12 @@ namespace NoelMic.Dsp;
 public sealed class NoiseGate : ISampleProvider
 {
     private readonly ISampleProvider _source;
-    private readonly double _thresholdDb;
-    private readonly double _hysteresisDb;
-    private readonly float _attackCoeff;
-    private readonly float _releaseCoeff;
-    private readonly int _holdSamples;
+    private readonly float _sampleRate;
+    private double _thresholdDb;
+    private double _hysteresisDb;
+    private float _attackCoeff;
+    private float _releaseCoeff;
+    private int _holdSamples;
 
     // Per-channel envelope and gain state, sized once at construction — this
     // is the only allocation for this stage, never per-Read.
@@ -22,17 +23,18 @@ public sealed class NoiseGate : ISampleProvider
     private readonly bool[] _open;
     private readonly int[] _holdCounter;
 
+    // Polled by the Settings UI on a Timer, written from the audio thread on
+    // every Read() — same volatile-not-lock idiom as LevelMeter.CurrentDb.
+    private volatile bool _isOpenExposed;
+    private volatile float _currentReductionDb;
+
     public NoiseGate(ISampleProvider source, double thresholdDb, float attackMs = 5f,
         float releaseMs = 150f, double hysteresisDb = 6.0, float holdMs = 120f)
     {
         _source = source;
-        _thresholdDb = thresholdDb;
-        _hysteresisDb = hysteresisDb;
+        _sampleRate = source.WaveFormat.SampleRate;
 
-        var sampleRate = source.WaveFormat.SampleRate;
-        _attackCoeff = MathF.Exp(-1f / (attackMs / 1000f * sampleRate));
-        _releaseCoeff = MathF.Exp(-1f / (releaseMs / 1000f * sampleRate));
-        _holdSamples = (int)(holdMs / 1000f * sampleRate);
+        SetCoefficients(thresholdDb, attackMs, releaseMs, hysteresisDb, holdMs);
 
         _envelope = new float[source.WaveFormat.Channels];
         _gain = new float[source.WaveFormat.Channels];
@@ -41,6 +43,28 @@ public sealed class NoiseGate : ISampleProvider
     }
 
     public WaveFormat WaveFormat => _source.WaveFormat;
+
+    public bool IsOpen => _isOpenExposed;
+
+    public float CurrentReductionDb => _currentReductionDb;
+
+    // Shared by the constructor and UpdateParameters — only derived
+    // coefficient fields are touched here, never the envelope/gain/open/hold
+    // state arrays, so a live parameter change never resets gate state and
+    // clicks.
+    private void SetCoefficients(double thresholdDb, float attackMs, float releaseMs, double hysteresisDb, float holdMs)
+    {
+        _thresholdDb = thresholdDb;
+        _hysteresisDb = hysteresisDb;
+        _attackCoeff = MathF.Exp(-1f / (attackMs / 1000f * _sampleRate));
+        _releaseCoeff = MathF.Exp(-1f / (releaseMs / 1000f * _sampleRate));
+        _holdSamples = (int)(holdMs / 1000f * _sampleRate);
+    }
+
+    public void UpdateParameters(double thresholdDb, float attackMs, float releaseMs, double hysteresisDb, float holdMs)
+    {
+        SetCoefficients(thresholdDb, attackMs, releaseMs, hysteresisDb, holdMs);
+    }
 
     public int Read(Span<float> buffer)
     {
@@ -84,6 +108,12 @@ public sealed class NoiseGate : ISampleProvider
             _gain[ch] = gainCoeff * _gain[ch] + (1f - gainCoeff) * targetGain;
 
             buffer[i] = x * _gain[ch];
+
+            if (ch == 0)
+            {
+                _isOpenExposed = _open[ch];
+                _currentReductionDb = 20f * MathF.Log10(MathF.Max(_gain[ch], 1e-9f));
+            }
         }
 
         return samplesRead;

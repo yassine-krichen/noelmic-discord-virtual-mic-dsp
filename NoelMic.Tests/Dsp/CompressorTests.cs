@@ -108,4 +108,52 @@ public class CompressorTests
         compressor.ReadAll(sampleCount: 20000);
         return compressor.ReadAll(sampleCount: 1000).Rms();
     }
+
+    [Fact]
+    public void CurrentReductionDb_IsAtOrBelowZeroAndNearZeroForaSignalBelowThreshold()
+    {
+        const float amplitude = 0.05f; // below -20dB threshold
+        var source = new ConstantSampleProvider(SampleRate, channels: 1, amplitude);
+        var compressor = new Compressor(source, ThresholdDb, ratio: 4.0);
+
+        compressor.ReadAll(sampleCount: 20000);
+
+        Assert.True(float.IsFinite(compressor.CurrentReductionDb));
+        Assert.True(
+            compressor.CurrentReductionDb is <= 0f and > -1f,
+            $"Expected near-zero reduction below threshold, got {compressor.CurrentReductionDb}dB.");
+    }
+
+    [Fact]
+    public void UpdateParameters_MidStream_LoweringThresholdIncreasesReductionWithoutClickingOrNaN()
+    {
+        const float amplitude = 0.5f; // above -20dB threshold
+        var source = new ConstantSampleProvider(SampleRate, channels: 1, amplitude);
+        var compressor = new Compressor(source, ThresholdDb, ratio: 4.0);
+
+        compressor.ReadAll(sampleCount: 20000);
+        var reductionBefore = compressor.CurrentReductionDb;
+
+        compressor.UpdateParameters(thresholdDb: -50, ratio: 4.0, attackMs: 5f, releaseMs: 100f, makeupGainDb: 0.0, mixPercent: 100.0);
+
+        var buffer = new float[64];
+        compressor.Read(buffer);
+        Assert.All(buffer, sample => Assert.True(float.IsFinite(sample), $"Sample {sample} was non-finite right after UpdateParameters."));
+
+        // Envelope/gain state is preserved across UpdateParameters, so the
+        // compressor eases toward the new (lower) target gain via its
+        // attack curve rather than snapping -- no sample right after the
+        // update should exceed the pre-update input amplitude.
+        Assert.All(buffer, sample => Assert.True(
+            MathF.Abs(sample) <= amplitude * 1.05f,
+            $"Sample {sample} exceeded the input amplitude ({amplitude}) right after UpdateParameters."));
+
+        compressor.ReadAll(sampleCount: 20000);
+        var reductionAfter = compressor.CurrentReductionDb;
+
+        Assert.True(
+            reductionAfter < reductionBefore,
+            $"Expected a much lower threshold to increase reduction (a more negative dB value), " +
+            $"got before={reductionBefore}dB, after={reductionAfter}dB.");
+    }
 }

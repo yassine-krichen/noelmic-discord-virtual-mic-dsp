@@ -15,10 +15,10 @@ public sealed class DeEsser : ISampleProvider
 
     private readonly ISampleProvider _source;
     private readonly float _sampleRate;
-    private readonly float _deEsserHz;
-    private readonly double _thresholdDb;
-    private readonly double _ratio;
-    private readonly float _maxReductionDb;
+    private float _deEsserHz;
+    private double _thresholdDb;
+    private double _ratio;
+    private float _maxReductionDb;
     private readonly BiquadCoefficients _sidechainHpf;
     private readonly float _sidechainAttackCoeff;
     private readonly float _sidechainReleaseCoeff;
@@ -35,6 +35,10 @@ public sealed class DeEsser : ISampleProvider
     // once per buffer (never reallocated) — see the per-buffer-not-per-sample
     // comment in Read().
     private readonly BiquadCoefficients[] _reductionShelf;
+
+    // Polled by the Settings UI on a Timer, written from the audio thread on
+    // every Read() — same volatile-not-lock idiom as LevelMeter.CurrentDb.
+    private volatile float _currentReductionDb;
 
     public DeEsser(ISampleProvider source, float deEsserHz, double thresholdDb, double ratio, float maxReductionDb)
     {
@@ -65,10 +69,25 @@ public sealed class DeEsser : ISampleProvider
 
     public WaveFormat WaveFormat => _source.WaveFormat;
 
+    public float CurrentReductionDb => _currentReductionDb;
+
+    // It already recomputes its reduction shelf every buffer from these
+    // fields, so no extra coefficient invalidation is needed beyond just
+    // assigning them — unlike the other stages there's no separate
+    // SetCoefficients helper to share with the constructor.
+    public void UpdateParameters(float deEsserHz, double thresholdDb, double ratio, float maxReductionDb)
+    {
+        _deEsserHz = deEsserHz;
+        _thresholdDb = thresholdDb;
+        _ratio = ratio;
+        _maxReductionDb = maxReductionDb;
+    }
+
     public int Read(Span<float> buffer)
     {
         var samplesRead = _source.Read(buffer);
         var channels = _sidechainEnvelope.Length;
+        var maxReductionDbThisBuffer = 0f;
 
         // The reduction shelf is rebuilt once per buffer (not per sample):
         // rebuilding RBJ coefficients from scratch every sample would be
@@ -87,8 +106,15 @@ public sealed class DeEsser : ISampleProvider
 
             reductionDb = Math.Clamp(reductionDb, 0f, _maxReductionDb);
 
+            if (reductionDb > maxReductionDbThisBuffer)
+            {
+                maxReductionDbThisBuffer = reductionDb;
+            }
+
             _reductionShelf[ch] = BiquadCoefficients.HighShelf(_sampleRate, _deEsserHz, -reductionDb);
         }
+
+        _currentReductionDb = maxReductionDbThisBuffer;
 
         for (var i = 0; i < samplesRead; i++)
         {

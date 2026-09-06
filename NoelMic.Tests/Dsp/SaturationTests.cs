@@ -55,4 +55,22 @@ public class SaturationTests
 
         Assert.All(output, sample => Assert.True(float.IsFinite(sample), $"Sample {sample} was non-finite for input {value}."));
     }
+
+    [Fact]
+    public void UpdateDrive_MidStream_IncreasesCompressionOfAPeakWithoutProducingNaNOrInfinity()
+    {
+        const float value = 1.8f;
+        var source = new ConstantSampleProvider(SampleRate, channels: 1, value);
+        var saturation = new Saturation(source, drive: 1.0f);
+
+        var beforeUpdate = saturation.ReadAll(sampleCount: 256);
+
+        saturation.UpdateDrive(6f);
+        var afterUpdate = saturation.ReadAll(sampleCount: 256);
+
+        Assert.All(afterUpdate, sample => Assert.True(float.IsFinite(sample), $"Sample {sample} was non-finite after UpdateDrive."));
+        Assert.True(
+            afterUpdate[0] < beforeUpdate[^1],
+            $"Expected raising drive to compress the {value} peak further, got before={beforeUpdate[^1]}, after={afterUpdate[0]}.");
+    }
 }

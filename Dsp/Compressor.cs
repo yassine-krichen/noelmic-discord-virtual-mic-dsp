@@ -9,17 +9,22 @@ namespace NoelMic.Dsp;
 public sealed class Compressor : ISampleProvider
 {
     private readonly ISampleProvider _source;
-    private readonly double _thresholdDb;
-    private readonly double _ratio;
-    private readonly float _attackCoeff;
-    private readonly float _releaseCoeff;
-    private readonly float _makeupGainLinear;
-    private readonly float _mix;
+    private readonly float _sampleRate;
+    private double _thresholdDb;
+    private double _ratio;
+    private float _attackCoeff;
+    private float _releaseCoeff;
+    private float _makeupGainLinear;
+    private float _mix;
 
     // Per-channel envelope and gain state, sized once at construction — this
     // is the only allocation for this stage, never per-Read.
     private readonly float[] _envelope;
     private readonly float[] _gain;
+
+    // Polled by the Settings UI on a Timer, written from the audio thread on
+    // every Read() — same volatile-not-lock idiom as LevelMeter.CurrentDb.
+    private volatile float _currentReductionDb;
 
     // NoiseGate has its own envelope follower with a different curve (binary
     // open/close) and purpose (silence removal vs. dynamic range control) —
@@ -28,20 +33,38 @@ public sealed class Compressor : ISampleProvider
         float attackMs = 5f, float releaseMs = 100f, double makeupGainDb = 0.0, double mixPercent = 100.0)
     {
         _source = source;
-        _thresholdDb = thresholdDb;
-        _ratio = ratio;
+        _sampleRate = source.WaveFormat.SampleRate;
 
-        var sampleRate = source.WaveFormat.SampleRate;
-        _attackCoeff = MathF.Exp(-1f / (attackMs / 1000f * sampleRate));
-        _releaseCoeff = MathF.Exp(-1f / (releaseMs / 1000f * sampleRate));
-        _makeupGainLinear = MathF.Pow(10f, (float)makeupGainDb / 20f);
-        _mix = (float)(mixPercent / 100.0);
+        SetCoefficients(thresholdDb, ratio, attackMs, releaseMs, makeupGainDb, mixPercent);
 
         _envelope = new float[source.WaveFormat.Channels];
         _gain = new float[source.WaveFormat.Channels];
     }
 
     public WaveFormat WaveFormat => _source.WaveFormat;
+
+    public float CurrentReductionDb => _currentReductionDb;
+
+    // Shared by the constructor and UpdateParameters — only derived
+    // coefficient fields are touched here, never the _envelope/_gain state
+    // arrays, so a live parameter change never resets compressor state and
+    // clicks.
+    private void SetCoefficients(double thresholdDb, double ratio, float attackMs, float releaseMs,
+        double makeupGainDb, double mixPercent)
+    {
+        _thresholdDb = thresholdDb;
+        _ratio = ratio;
+        _attackCoeff = MathF.Exp(-1f / (attackMs / 1000f * _sampleRate));
+        _releaseCoeff = MathF.Exp(-1f / (releaseMs / 1000f * _sampleRate));
+        _makeupGainLinear = MathF.Pow(10f, (float)makeupGainDb / 20f);
+        _mix = (float)(mixPercent / 100.0);
+    }
+
+    public void UpdateParameters(double thresholdDb, double ratio, float attackMs, float releaseMs,
+        double makeupGainDb, double mixPercent)
+    {
+        SetCoefficients(thresholdDb, ratio, attackMs, releaseMs, makeupGainDb, mixPercent);
+    }
 
     public int Read(Span<float> buffer)
     {
@@ -80,6 +103,13 @@ public sealed class Compressor : ISampleProvider
             // down attack/release ballistics it has nothing to do with.
             var wet = x * _gain[ch] * _makeupGainLinear;
             buffer[i] = x * (1f - _mix) + wet * _mix;
+
+            if (ch == 0)
+            {
+                // Pre-makeup reduction, so metering reflects dynamics control
+                // only and isn't inflated/masked by the makeup gain knob.
+                _currentReductionDb = 20f * MathF.Log10(MathF.Max(_gain[ch], 1e-9f));
+            }
         }
 
         return samplesRead;
