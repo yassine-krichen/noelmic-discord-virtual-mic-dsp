@@ -110,6 +110,9 @@ public sealed class AudioEngine
             _capture?.Dispose();
             _captureDevice.Dispose();
             _renderDevice.Dispose();
+            // Owns native RNNoise state; must be released after the output has stopped
+            // reading from it, and the next Start builds a fresh chain.
+            _dspChain?.Dispose();
         }
     }
 

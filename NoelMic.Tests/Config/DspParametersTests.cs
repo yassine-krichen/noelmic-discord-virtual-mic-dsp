@@ -194,7 +194,8 @@ public class DspParametersTests
                 SaturationDrive: 1.0f,
                 LimiterCeilingDb: -1,
                 LimiterAttackMs: 2,
-                LimiterReleaseMs: 50),
+                LimiterReleaseMs: 50,
+                NoiseSuppressionEnabled: false),
         };
 
         yield return new object[]
@@ -231,7 +232,8 @@ public class DspParametersTests
                 SaturationDrive: 1.0f,
                 LimiterCeilingDb: -1,
                 LimiterAttackMs: 2,
-                LimiterReleaseMs: 50),
+                LimiterReleaseMs: 50,
+                NoiseSuppressionEnabled: true),
         };
 
         yield return new object[]
@@ -268,7 +270,8 @@ public class DspParametersTests
                 SaturationDrive: 1.8f,
                 LimiterCeilingDb: -1,
                 LimiterAttackMs: 2,
-                LimiterReleaseMs: 50),
+                LimiterReleaseMs: 50,
+                NoiseSuppressionEnabled: true),
         };
 
         yield return new object[]
@@ -305,7 +308,8 @@ public class DspParametersTests
                 SaturationDrive: 2.2f,
                 LimiterCeilingDb: -1,
                 LimiterAttackMs: 2,
-                LimiterReleaseMs: 50),
+                LimiterReleaseMs: 50,
+                NoiseSuppressionEnabled: true),
         };
 
         yield return new object[]
@@ -342,7 +346,8 @@ public class DspParametersTests
                 SaturationDrive: 1.5f,
                 LimiterCeilingDb: -1,
                 LimiterAttackMs: 2,
-                LimiterReleaseMs: 50),
+                LimiterReleaseMs: 50,
+                NoiseSuppressionEnabled: true),
         };
     }
 

@@ -11,12 +11,13 @@ namespace NoelMic.Dsp;
 /// saturation -> limiter -> output level meter. A thin delegator, same idiom
 /// as MuteGateSampleProvider — no new abstraction beyond composition.
 /// </summary>
-public sealed class DspChain : ISampleProvider
+public sealed class DspChain : ISampleProvider, IDisposable
 {
     private readonly ISampleProvider _inner;
     private readonly DspParameterStore _store;
 
     private readonly InputGain _inputGain;
+    private readonly NoiseSuppressor _noiseSuppressor;
     private readonly LevelMeter _inputLevelMeter;
     private readonly CalibrationMeter _calibrationMeter;
     private readonly Biquad _highpass;
@@ -49,6 +50,13 @@ public sealed class DspChain : ISampleProvider
         // topology and only the coefficients differ.
         _inputGain = new InputGain(source, p.InputGainDb);
         ISampleProvider chain = _inputGain;
+
+        // RNNoise wants a properly gain-staged input, and downstream meters/
+        // calibration should see the denoised signal the user actually
+        // hears — so this sits right after input gain and before anything
+        // else observes or shapes the signal.
+        _noiseSuppressor = new NoiseSuppressor(chain, p.NoiseSuppressionEnabled);
+        chain = _noiseSuppressor;
 
         _inputLevelMeter = new LevelMeter(chain);
         chain = _inputLevelMeter;
@@ -111,6 +119,12 @@ public sealed class DspChain : ISampleProvider
 
     public void UpdateParameters(AppConfig config) => _store.Update(DspParameters.Resolve(config));
 
+    // NoiseSuppressor owns unmanaged (native RNNoise) state, unlike every
+    // other stage in this chain — see AudioEngine.Stop(), which disposes
+    // the DspChain on every device switch/auto-recovery so that state
+    // doesn't leak.
+    public void Dispose() => _noiseSuppressor.Dispose();
+
     public void StartCalibration() => _calibrationMeter.StartCalibration();
 
     public (bool IsRunning, bool IsDone, int QualifyingFrameCount, float ComputedGainDb) GetCalibrationStatus() =>
@@ -150,6 +164,7 @@ public sealed class DspChain : ISampleProvider
     private void ApplyParameters(DspParameters p)
     {
         _inputGain.UpdateGainDb(p.InputGainDb);
+        _noiseSuppressor.UpdateEnabled(p.NoiseSuppressionEnabled);
         _highpass.UpdateCoefficients(BiquadCoefficients.HighPass(_sampleRate, p.HighpassHz));
         _gate.UpdateParameters(p.GateThresholdDb, p.GateAttackMs, p.GateReleaseMs, p.GateHysteresisDb, p.GateHoldMs);
         _lowShelf.UpdateCoefficients(BiquadCoefficients.LowShelf(_sampleRate, p.LowShelfHz, p.LowShelfDb));

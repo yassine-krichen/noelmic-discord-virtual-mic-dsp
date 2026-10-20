@@ -39,7 +39,8 @@ public sealed record DspParameters(
     float SaturationDrive,
     float LimiterCeilingDb,
     float LimiterAttackMs,
-    float LimiterReleaseMs)
+    float LimiterReleaseMs,
+    bool NoiseSuppressionEnabled)
 {
     // Every override below is applied by name via `with`, never positionally
     // — with ~30 same-typed (float/double) fields, a positional constructor
@@ -85,6 +86,7 @@ public sealed record DspParameters(
             LimiterCeilingDb = config.Limiter.CeilingDb ?? preset.LimiterCeilingDb,
             LimiterAttackMs = config.Limiter.AttackMs ?? preset.LimiterAttackMs,
             LimiterReleaseMs = config.Limiter.ReleaseMs ?? preset.LimiterReleaseMs,
+            NoiseSuppressionEnabled = config.NoiseSuppressionEnabled ?? preset.NoiseSuppressionEnabled,
         };
     }
 }

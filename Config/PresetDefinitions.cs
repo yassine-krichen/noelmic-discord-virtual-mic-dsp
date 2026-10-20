@@ -46,7 +46,8 @@ public static class PresetDefinitions
             SaturationDrive: 1.0f,
             LimiterCeilingDb: -1,
             LimiterAttackMs: 2,
-            LimiterReleaseMs: 50),
+            LimiterReleaseMs: 50,
+            NoiseSuppressionEnabled: false),
 
         ["Natural"] = new DspParameters(
             InputGainDb: 12,
@@ -79,7 +80,8 @@ public static class PresetDefinitions
             SaturationDrive: 1.0f,
             LimiterCeilingDb: -1,
             LimiterAttackMs: 2,
-            LimiterReleaseMs: 50),
+            LimiterReleaseMs: 50,
+            NoiseSuppressionEnabled: true),
 
         ["Broadcast"] = new DspParameters(
             InputGainDb: 12,
@@ -112,7 +114,8 @@ public static class PresetDefinitions
             SaturationDrive: 1.8f,
             LimiterCeilingDb: -1,
             LimiterAttackMs: 2,
-            LimiterReleaseMs: 50),
+            LimiterReleaseMs: 50,
+            NoiseSuppressionEnabled: true),
 
         ["Warm"] = new DspParameters(
             InputGainDb: 12,
@@ -145,7 +148,8 @@ public static class PresetDefinitions
             SaturationDrive: 2.2f,
             LimiterCeilingDb: -1,
             LimiterAttackMs: 2,
-            LimiterReleaseMs: 50),
+            LimiterReleaseMs: 50,
+            NoiseSuppressionEnabled: true),
 
         ["Bright"] = new DspParameters(
             InputGainDb: 14,
@@ -178,7 +182,8 @@ public static class PresetDefinitions
             SaturationDrive: 1.5f,
             LimiterCeilingDb: -1,
             LimiterAttackMs: 2,
-            LimiterReleaseMs: 50),
+            LimiterReleaseMs: 50,
+            NoiseSuppressionEnabled: true),
     };
 
     // Case-insensitive match, falls back to "Broadcast" on unknown/garbage

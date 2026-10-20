@@ -44,6 +44,10 @@ public sealed class AppConfig
 
     public float? SaturationDrive { get; set; }
 
+    // Nullable for the same "unset means use the preset's value" reason as
+    // InputGainDb/SaturationDrive above.
+    public bool? NoiseSuppressionEnabled { get; set; }
+
     public EqConfig Eq { get; set; } = new();
 
     public CompressorConfig Compressor { get; set; } = new();

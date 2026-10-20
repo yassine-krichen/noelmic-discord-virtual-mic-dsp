@@ -1,0 +1,33 @@
+version: "3"
+
+# Windows tray app (.NET), no port.
+
+vars:
+  PROJECT: NoelMic.csproj
+  TEST_PROJECT: NoelMic.Tests/NoelMic.Tests.csproj
+
+tasks:
+  help:
+    desc: List all available tasks
+    cmds:
+      - task --list
+
+  install:
+    desc: Restore NuGet packages
+    cmds:
+      - dotnet restore {{.PROJECT}}
+
+  run:
+    desc: Run the tray app (foreground; stop it first if a live copy is already running)
+    cmds:
+      - dotnet run --project {{.PROJECT}}
+
+  build:
+    desc: Build the app
+    cmds:
+      - dotnet build {{.PROJECT}}
+
+  test:
+    desc: Run the test project (NoelMic.Tests)
+    cmds:
+      - dotnet test {{.TEST_PROJECT}}
